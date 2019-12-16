@@ -53,15 +53,30 @@ import java.util.*;
  * returns the count of both expired and unexpired elements.
  * This queue does not permit null elements.
  *
+ *
+ * 一个无界的可阻塞延迟队列，只有当元素的延迟时间到期之后其中的元素才可以被取出。
+ * 队首是剩余延迟时间最短的元素，也就是最早出队的元素。如果没有元素延迟到期，那么使用poll()取队首元素将会返回null
+ * 一个元素延迟到期的标志是对该元素调用getDelay(TimeUnit.NANOSECONDS)方法会返回一个小于等于0的值。
+ * 即使延迟时间未到期的元素不能够使用take或者poll取出，这些未到期元素仍然会被当成正常元素处理。
+ * 当调用size()方法取队列中元素的个数时，返回的数目包括延迟到期的元素和延迟未到期的元素，
+ * delayQueue不允许添加null元素。
+ *
+ *
  * <p>This class and its iterator implement all of the
  * <em>optional</em> methods of the {@link Collection} and {@link
  * Iterator} interfaces.  The Iterator provided in method {@link
  * #iterator()} is <em>not</em> guaranteed to traverse the elements of
  * the DelayQueue in any particular order.
  *
+ *
+ * 这个类和其iterator迭代器实现了Collection接口和Iterator接口中的optional方法。
+ * 使用iterator()方法获取的迭代器Iterator不能保证以某个特定顺序遍历DelayQueue中的元素。
+ *
  * <p>This class is a member of the
  * <a href="{@docRoot}/../technotes/guides/collections/index.html">
  * Java Collections Framework</a>.
+ *
+ * DelayQueue是Java集合类中的一个成员
  *
  * @since 1.5
  * @author Doug Lea
@@ -70,7 +85,14 @@ import java.util.*;
 public class DelayQueue<E extends Delayed> extends AbstractQueue<E>
     implements BlockingQueue<E> {
 
+    /**
+     * 使用可重入锁进行访问控制
+     */
     private final transient ReentrantLock lock = new ReentrantLock();
+
+    /**
+     * DelauQueue内部是使用PriorityQueue进行实现的
+     */
     private final PriorityQueue<E> q = new PriorityQueue<E>();
 
     /**
@@ -88,7 +110,14 @@ public class DelayQueue<E extends Delayed> extends AbstractQueue<E>
      * waiting thread, but not necessarily the current leader, is
      * signalled.  So waiting threads must be prepared to acquire
      * and lose leadership while waiting.
+     *
+     * 指定用于等待队列头中元素的线程。是Leader-Follower模式的变体，用来最小化非必须等待时间。
+     * 当一个线程变成了Leader，它仅仅等待下一个延迟，其他没有成为Leader的线程则需要无限期等待。
+     * Leader线程必须在调用take()或者poll()方法返回之前使用信号量通知其他线程，除非其他线程在
+     * 过渡期间成为新的Leader. 无论什么时候队列头部被一个更早到期的元素替换了，Leader线程会被设置为null，
+     * 使其无效，一些等待线程，不一定是当前的Leader线程，会被信号量进行通知。等待线程会在等待过程中准备获取或者失去leader
      */
+    //todo 如何使用线程的Leader-Follower模式保证最小化等待时间的？
     private Thread leader = null;
 
     /**
@@ -128,7 +157,7 @@ public class DelayQueue<E extends Delayed> extends AbstractQueue<E>
 
     /**
      * Inserts the specified element into this delay queue.
-     *
+     * 将指定的元素添加进delay queue
      * @param e the element to add
      * @return {@code true}
      * @throws NullPointerException if the specified element is null
@@ -139,6 +168,7 @@ public class DelayQueue<E extends Delayed> extends AbstractQueue<E>
         try {
             q.offer(e);
             if (q.peek() == e) {
+                //等待队列头元素的Thread置为null，并使用condition信号量通知其他follower线程
                 leader = null;
                 available.signal();
             }
